@@ -43,7 +43,7 @@
 <script>
 const SALT = Uint8Array.from(atob("nh881FcKuGIR5X1Go5gssQ=="), c => c.charCodeAt(0));
 const ITER = 310000;
-const FILES = [{"i": 1, "name": "实习证明.pdf", "size": 480587, "kind": "pdf", "mime": "application/pdf", "blob": 480615}, {"i": 2, "name": "成绩.png", "size": 423356, "kind": "img", "mime": "image/png", "blob": 423384}, {"i": 3, "name": "照片.jpg", "size": 1032327, "kind": "img", "mime": "image/jpeg", "blob": 1032355}, {"i": 4, "name": "获奖证书.jpg", "size": 120392, "kind": "img", "mime": "image/jpeg", "blob": 120420}];
+const FILES = [{"i": 1, "name": "实习证明.jpg", "size": 337768, "kind": "img", "mime": "image/jpeg", "blob": 337796, "v": "32b48a5ac1"}, {"i": 2, "name": "成绩.png", "size": 423356, "kind": "img", "mime": "image/png", "blob": 423384, "v": "dad3cefea5"}, {"i": 3, "name": "照片.jpg", "size": 1032327, "kind": "img", "mime": "image/jpeg", "blob": 1032355, "v": "2c37a510e1"}, {"i": 4, "name": "获奖证书.jpg", "size": 120392, "kind": "img", "mime": "image/jpeg", "blob": 120420, "v": "67cc00585c"}];
 
 const $ = id => document.getElementById(id);
 
@@ -55,8 +55,8 @@ async function deriveKey(pw) {
     km, {name: "AES-GCM", length: 256}, false, ["decrypt"]);
 }
 
-async function decryptOne(key, i) {
-  const r = await fetch("data/" + i + ".bin", {cache: "force-cache"});
+async function decryptOne(key, i, v) {
+  const r = await fetch("data/" + i + ".bin?v=" + v);
   if (!r.ok) throw new Error("下载失败 " + r.status);
   const buf = await r.arrayBuffer();
   const iv = buf.slice(0, 12), ct = buf.slice(12);
@@ -91,7 +91,7 @@ async function unlock() {
     const list = $("list");
     list.innerHTML = "";
     for (const f of FILES) {
-      const bytes = await decryptOne(key, f.i);
+      const bytes = await decryptOne(key, f.i, f.v);
       list.appendChild(card(f, bytes));
     }
     $("gate").style.display = "none";
