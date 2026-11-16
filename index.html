@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>文件查看</title>
+<style>
+ *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+ body{margin:0;padding:20px 16px 40px;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+   background:#f2f3f5;color:#1b1d21}
+ #gate{max-width:420px;margin:14vh auto 0;background:#fff;border-radius:16px;padding:26px 22px;
+   box-shadow:0 2px 18px rgba(0,0,0,.06);text-align:center}
+ h1{font-size:20px;margin:0 0 6px}
+ .tip{color:#8a8f98;font-size:13px;margin:0 0 22px;line-height:1.6}
+ input{width:100%;font-size:22px;letter-spacing:6px;text-align:center;padding:14px;border:1.5px solid #e3e5e8;
+   border-radius:12px;outline:none}
+ input:focus{border-color:#07c160}
+ button{width:100%;margin-top:14px;padding:15px;font-size:17px;font-weight:600;color:#fff;
+   background:#07c160;border:0;border-radius:12px}
+ button:disabled{background:#b9dfc9}
+ .err{color:#e54d42;font-size:13px;height:18px;margin-top:10px}
+ #list{display:none}
+ .card{background:#fff;border-radius:14px;padding:14px;margin-bottom:14px}
+ .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+ .nm{font-size:15px;font-weight:600}
+ .sz{font-size:12px;color:#9aa0a6}
+ img{width:100%;border-radius:10px;display:block;background:#f7f7f7}
+ .pdf{display:block;text-align:center;padding:16px;background:#eef7f1;border-radius:10px;
+   color:#07c160;font-size:15px;text-decoration:none;font-weight:600}
+ footer{text-align:center;color:#b0b5bd;font-size:12px;margin-top:6px;line-height:1.8}
+ .hidden{display:none!important}
+</style></head><body>
+
+<div id="gate">
+  <h1>受保护的文件</h1>
+  <p class="tip">请输入发送人给你的密码</p>
+  <input id="pw" type="tel" inputmode="numeric" maxlength="12" autocomplete="off" placeholder="密码">
+  <button id="go">打开</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div id="list"></div>
+<footer id="foot" class="hidden">长按图片可保存到相册<br>文件仅在本页解密，服务端只存密文</footer>
+
+<script>
+const SALT = Uint8Array.from(atob("nh881FcKuGIR5X1Go5gssQ=="), c => c.charCodeAt(0));
+const ITER = 310000;
+const FILES = [{"i": 1, "name": "实习证明.pdf", "size": 480587, "kind": "pdf", "mime": "application/pdf", "blob": 480615}, {"i": 2, "name": "成绩.png", "size": 423356, "kind": "img", "mime": "image/png", "blob": 423384}, {"i": 3, "name": "照片.jpg", "size": 1032327, "kind": "img", "mime": "image/jpeg", "blob": 1032355}, {"i": 4, "name": "获奖证书.jpg", "size": 120392, "kind": "img", "mime": "image/jpeg", "blob": 120420}];
+
+const $ = id => document.getElementById(id);
+
+async function deriveKey(pw) {
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw),
+    {name: "PBKDF2"}, false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {name: "PBKDF2", salt: SALT, iterations: ITER, hash: "SHA-256"},
+    km, {name: "AES-GCM", length: 256}, false, ["decrypt"]);
+}
+
+async function decryptOne(key, i) {
+  const r = await fetch("data/" + i + ".bin", {cache: "force-cache"});
+  if (!r.ok) throw new Error("下载失败 " + r.status);
+  const buf = await r.arrayBuffer();
+  const iv = buf.slice(0, 12), ct = buf.slice(12);
+  return crypto.subtle.decrypt({name: "AES-GCM", iv: new Uint8Array(iv)}, key, ct);
+}
+
+function human(n) {
+  return n > 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.round(n/1024) + " KB";
+}
+
+function card(f, bytes) {
+  const url = URL.createObjectURL(new Blob([bytes], {type: f.mime}));
+  const el = document.createElement("div");
+  el.className = "card";
+  const head = '<div class="head"><span class="nm">' + f.name + '</span><span class="sz">' + human(f.size) + '</span></div>';
+  if (f.kind === "img") {
+    el.innerHTML = head + '<img alt="' + f.name + '" src="' + url + '">';
+  } else {
+    el.innerHTML = head + '<a class="pdf" href="' + url + '" target="_blank" rel="noopener">📄 点此查看 / 保存 PDF</a>';
+  }
+  return el;
+}
+
+async function unlock() {
+  const pw = $("pw").value.trim();
+  if (!pw) { $("err").textContent = "请输入密码"; return; }
+  $("go").disabled = true;
+  $("err").textContent = "";
+  $("go").textContent = "校验中…";
+  try {
+    const key = await deriveKey(pw);
+    const list = $("list");
+    list.innerHTML = "";
+    for (const f of FILES) {
+      const bytes = await decryptOne(key, f.i);
+      list.appendChild(card(f, bytes));
+    }
+    $("gate").style.display = "none";
+    list.style.display = "block";
+    $("foot").classList.remove("hidden");
+  } catch (e) {
+    $("go").disabled = false;
+    $("go").textContent = "打开";
+    $("err").textContent = "密码不对，或网络不稳，请重试";
+  }
+}
+
+if (!window.crypto || !crypto.subtle) {
+  $("err").textContent = "当前浏览器不支持，请点右上角在浏览器中打开";
+} else {
+  $("go").addEventListener("click", unlock);
+  $("pw").addEventListener("keydown", e => { if (e.key === "Enter") unlock(); });
+}
+</script></body></html>
